@@ -9,49 +9,62 @@ require Exporter;
 use Carp;
 
 @ISA=qw(Exporter);
-@EXPORT=(copy);
+@EXPORT=qw(copy);
 @EXPORT_OK=qw(copy cp);
 
-$File::Copy::VERSION = '1.4';
+$File::Copy::VERSION = '1.5';
+$File::Copy::Too_Big = 1024 * 1024 * 2;
+
 sub VERSION {
-	# Version of File::Copy
-	$File::Copy::VERSION;
+    # Version of File::Copy
+    return $File::Copy::VERSION;
 }
 
 sub copy {
-    croak("Usage: copy( file1, file2) ")
-      unless(@_ == 2);
+    croak("Usage: copy( file1, file2 [, buffersize]) ")
+      unless(@_ == 2 || @_ == 3);
 
     my $from = shift;
     my $to = shift;
-    my $size = -s $from;
-    $size = 1024 unless($size >= 512);
-    my $status;
     my $recsep = $\;
-    my $closefrom=0; my $closeto=0;
-    local(*FROM, *TO, $r, $buf);
+    my $closefrom=0;
+    my $closeto=0;
+    my ($size, $status, $r, $buf);
+    local(*FROM, *TO);
 
     $\ = '';
 
-    if (ref(\$from) eq GLOB) {
+    if (ref(\$from) eq 'GLOB') {
 	*FROM = $from;
-    } elsif (ref($from) eq GLOB || ref($from) eq FileHandle) {
+    } elsif (defined ref $from and
+	     (ref($from) eq 'GLOB' || ref($from) eq 'FileHandle')) {
 	*FROM = *$from;
     } else {
 	open(FROM,"<$from")||goto(fail_open1);
 	$closefrom = 1;
     }
 
-    if (ref(\$to) eq GLOB) {
+    if (ref(\$to) eq 'GLOB') {
 	*TO = $to;
-    } elsif (ref($to) eq GLOB || ref($to) eq FileHandle) {
+    } elsif (defined ref $to and
+	     (ref($to) eq 'GLOB' || ref($to) eq 'FileHandle')) {
 	*TO = *$to;
     } else {
 	open(TO,">$to")||goto(fail_open2);
 	$closeto=1;
     }
 
-    while(defined($r = sysread(FROM,$buf,$size)) && $r > 0) {
+    if (@_) {
+	$size = shift(@_) + 0;
+	croak("Bad buffer size for copy: $size\n") unless ($size > 0);
+    } else {
+	$size = -s FROM;
+	$size = 1024 if ($size < 512);
+	$size = $File::Copy::Too_Big if ($size > $File::Copy::Too_Big);
+    }
+
+    $buf = '';
+    while(defined($r = read(FROM,$buf,$size)) && $r > 0) {
 	if (syswrite (TO,$buf,$r) != $r) {
 	    goto fail_inner;    
 	}
@@ -112,6 +125,13 @@ glob. Obviously, if the first argument is a filehandle of some
 sort, it will be read from, and if it is a file I<name> it will
 be opened for reading. Likewise, the second argument will be
 written to (and created if need be).
+
+An optional third parameter can be used to specify the buffer
+size used for copying. This is the number of bytes from the
+first file, that wil be held in memory at any given time, before
+being written to the second file. The default buffer size depends
+upon the file, but will generally be the whole file (up to 2Mb), or
+1k for filehandles that do not reference files (eg. sockets).
 
 You may use the syntax C<use File::Copy "cp"> to get at the
 "cp" alias for this function. The syntax is I<exactly> the same.

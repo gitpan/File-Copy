@@ -1,0 +1,5 @@
+This package impliments file copying by file name, or by filehandle.
+
+You should just do a make install, as there is nothing to build.
+
+			-AJS <ajs@ajs.com>
